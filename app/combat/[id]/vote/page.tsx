@@ -48,16 +48,21 @@ export default async function VotePage({ params }: { params: Promise<{ id: strin
     })
   })
 
+  // 🧩 Correção: serializar o objeto antes de enviá-lo ao componente cliente
+  const serializedCombat = JSON.parse(
+    JSON.stringify({
+      id: combat._id.toString(),
+      participants: combat.participants.map((p: any) => ({
+        id: p._id.toString(),
+        name: p.name,
+      })),
+      rounds: combat.rounds || [],
+    })
+  )
+
   return (
     <VoteClient
-      combat={{
-        id: combat._id.toString(),
-        participants: combat.participants.map((p: any) => ({
-          id: p._id.toString(),
-          name: p.name,
-        })),
-        rounds: combat.rounds || [],
-      }}
+      combat={serializedCombat}
       userId={session.userId}
       allMovies={allMovies}
     />

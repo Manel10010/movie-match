@@ -1,5 +1,6 @@
 "use client"
 
+import { useEffect } from "react"
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
@@ -91,15 +92,13 @@ export function CombatClient({ combat, user, isParticipant }: CombatClientProps)
     }
   }
 
+  useEffect(() => {
   if (combat.status === "in_progress") {
     router.push(`/combat/${combat.id}/vote`)
-    return null
-  }
-
-  if (combat.status === "finished") {
+  } else if (combat.status === "finished") {
     router.push(`/combat/${combat.id}/result`)
-    return null
   }
+}, [combat.status, combat.id, router])
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-900 via-slate-900 to-black">
