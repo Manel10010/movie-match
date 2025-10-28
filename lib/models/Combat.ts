@@ -6,12 +6,6 @@ export interface IFilm {
   posterUrl: string
 }
 
-export interface IParticipantSelection {
-  userId: mongoose.Types.ObjectId
-  selectedFilms: IFilm[]
-  ready: boolean
-}
-
 export interface IRound {
   filmA: IFilm
   filmB: IFilm
@@ -23,11 +17,8 @@ export interface ICombat extends Document {
   participants: mongoose.Types.ObjectId[]
   deckSize: number
   maxParticipants: number
-  status: "waiting" | "selecting" | "in_progress" | "finished"
-  participantSelections: IParticipantSelection[]
-  currentRound: IRound | null
+  status: "waiting" | "in_progress" | "finished"
   rounds: IRound[]
-  remainingFilms: IFilm[]
   winner?: IFilm
   createdAt: Date
 }
@@ -36,12 +27,6 @@ const FilmSchema = new Schema({
   tmdbId: { type: String, required: true },
   title: { type: String, required: true },
   posterUrl: { type: String, required: true },
-})
-
-const ParticipantSelectionSchema = new Schema({
-  userId: { type: Schema.Types.ObjectId, ref: "User", required: true },
-  selectedFilms: [FilmSchema],
-  ready: { type: Boolean, default: false },
 })
 
 const RoundSchema = new Schema({
@@ -57,13 +42,10 @@ const CombatSchema = new Schema<ICombat>({
   maxParticipants: { type: Number, required: true },
   status: {
     type: String,
-    enum: ["waiting", "selecting", "in_progress", "finished"],
+    enum: ["waiting", "in_progress", "finished"],
     default: "waiting",
   },
-  participantSelections: [ParticipantSelectionSchema],
-  currentRound: RoundSchema,
   rounds: [RoundSchema],
-  remainingFilms: [FilmSchema],
   winner: FilmSchema,
   createdAt: { type: Date, default: Date.now },
 })

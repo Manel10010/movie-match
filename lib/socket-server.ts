@@ -19,12 +19,12 @@ export function initSocketServer(httpServer: HTTPServer) {
     console.log("[v0] Socket connected:", socket.id)
 
     socket.on("join-combat", (combatId: string) => {
-      socket.join(combatId)
+      socket.join(`combat-${combatId}`)
       console.log("[v0] Socket joined combat:", combatId)
     })
 
     socket.on("leave-combat", (combatId: string) => {
-      socket.leave(combatId)
+      socket.leave(`combat-${combatId}`)
       console.log("[v0] Socket left combat:", combatId)
     })
 
@@ -41,8 +41,4 @@ export function getIO() {
     throw new Error("Socket.io not initialized")
   }
   return io
-}
-
-export function getSocketServer() {
-  return getIO()
 }

@@ -46,10 +46,6 @@ export function CombatClient({ combat, user, isParticipant }: CombatClientProps)
     onParticipantJoined: (newParticipants) => {
       setParticipants(newParticipants)
     },
-    onSelectionStarted: () => {
-      setStatus("selecting")
-      router.push(`/combat/${combat.id}/select`)
-    },
     onCombatStarted: () => {
       setStatus("in_progress")
       router.push(`/combat/${combat.id}/vote`)
@@ -57,9 +53,7 @@ export function CombatClient({ combat, user, isParticipant }: CombatClientProps)
   })
 
   useEffect(() => {
-    if (status === "selecting") {
-      router.push(`/combat/${combat.id}/select`)
-    } else if (status === "in_progress") {
+    if (status === "in_progress") {
       router.push(`/combat/${combat.id}/vote`)
     } else if (status === "finished") {
       router.push(`/combat/${combat.id}/result`)

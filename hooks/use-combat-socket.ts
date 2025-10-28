@@ -20,23 +20,17 @@ interface Participant {
 interface UseCombatSocketOptions {
   combatId: string
   onParticipantJoined?: (participants: Participant[]) => void
-  onSelectionStarted?: () => void
-  onParticipantSelected?: (data: { userId: string; ready: boolean; allReady: boolean }) => void
-  onCombatStarted?: (data?: { remainingFilms: Movie[]; currentRound: any }) => void
+  onCombatStarted?: () => void
   onRoundCompleted?: (data: { completedRound: any; remainingMovies: Movie[] }) => void
   onCombatFinished?: (data: { winner: Movie }) => void
-  onNewRound?: (data: { filmA: Movie; filmB: Movie }) => void
 }
 
 export function useCombatSocket({
   combatId,
   onParticipantJoined,
-  onSelectionStarted,
-  onParticipantSelected,
   onCombatStarted,
   onRoundCompleted,
   onCombatFinished,
-  onNewRound,
 }: UseCombatSocketOptions) {
   const [socket, setSocket] = useState<Socket | null>(null)
   const [isConnected, setIsConnected] = useState(false)
@@ -62,19 +56,9 @@ export function useCombatSocket({
       onParticipantJoined?.(data.participants)
     }
 
-    const handleSelectionStarted = () => {
-      console.log("[v0] Selection phase started")
-      onSelectionStarted?.()
-    }
-
-    const handleParticipantSelected = (data: { userId: string; ready: boolean; allReady: boolean }) => {
-      console.log("[v0] Participant selected films:", data)
-      onParticipantSelected?.(data)
-    }
-
-    const handleCombatStarted = (data?: { remainingFilms: Movie[]; currentRound: any }) => {
-      console.log("[v0] Combat started with data:", data)
-      onCombatStarted?.(data)
+    const handleCombatStarted = () => {
+      console.log("[v0] Combat started")
+      onCombatStarted?.()
     }
 
     const handleRoundCompleted = (data: { completedRound: any; remainingMovies: Movie[] }) => {
@@ -87,43 +71,23 @@ export function useCombatSocket({
       onCombatFinished?.(data)
     }
 
-    const handleNewRound = (data: { filmA: Movie; filmB: Movie }) => {
-      console.log("[v0] New round started:", data)
-      onNewRound?.(data)
-    }
-
     socketInstance.on("connect", handleConnect)
     socketInstance.on("disconnect", handleDisconnect)
     socketInstance.on("participant-joined", handleParticipantJoined)
-    socketInstance.on("selection-started", handleSelectionStarted)
-    socketInstance.on("participant-selected", handleParticipantSelected)
     socketInstance.on("combat-started", handleCombatStarted)
     socketInstance.on("round-completed", handleRoundCompleted)
     socketInstance.on("combat-finished", handleCombatFinished)
-    socketInstance.on("new-round", handleNewRound)
 
     return () => {
       socketInstance.emit("leave-combat", combatId)
       socketInstance.off("connect", handleConnect)
       socketInstance.off("disconnect", handleDisconnect)
       socketInstance.off("participant-joined", handleParticipantJoined)
-      socketInstance.off("selection-started", handleSelectionStarted)
-      socketInstance.off("participant-selected", handleParticipantSelected)
       socketInstance.off("combat-started", handleCombatStarted)
       socketInstance.off("round-completed", handleRoundCompleted)
       socketInstance.off("combat-finished", handleCombatFinished)
-      socketInstance.off("new-round", handleNewRound)
     }
-  }, [
-    combatId,
-    onParticipantJoined,
-    onSelectionStarted,
-    onParticipantSelected,
-    onCombatStarted,
-    onRoundCompleted,
-    onCombatFinished,
-    onNewRound,
-  ])
+  }, [combatId, onParticipantJoined, onCombatStarted, onRoundCompleted, onCombatFinished])
 
   return { socket, isConnected }
 }
