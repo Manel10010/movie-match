@@ -45,6 +45,23 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     combat.participants.push(session.userId)
     await combat.save()
 
+    try {
+      const io = (global as any).io
+      if (io) {
+        const updatedCombat = await Combat.findById(id).populate("participants", "name profilePic deck")
+        const participantsData = updatedCombat.participants.map((p: any) => ({
+          id: p._id.toString(),
+          name: p.name,
+          profilePic: p.profilePic,
+          deckCount: p.deck.length,
+        }))
+
+        io.to(`combat-${id}`).emit("participant-joined", { participants: participantsData })
+      }
+    } catch (socketError) {
+      console.error("[SOCKET_ERROR]", socketError)
+    }
+
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error("[JOIN_COMBAT_ERROR]", error)

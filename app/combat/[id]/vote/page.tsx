@@ -34,35 +34,60 @@ export default async function VotePage({ params }: { params: Promise<{ id: strin
     redirect(`/combat/${id}`)
   }
 
-  // Get all unique movies from participants
   const allMovies: any[] = []
   combat.participants.forEach((p: any) => {
     p.deck.forEach((movie: any) => {
       if (!allMovies.find((m) => m.tmdbId === movie.tmdbId)) {
+        // Explicitly create plain object with only needed fields
         allMovies.push({
-          tmdbId: movie.tmdbId,
-          title: movie.title,
-          posterUrl: movie.posterUrl,
+          tmdbId: String(movie.tmdbId),
+          title: String(movie.title),
+          posterUrl: String(movie.posterUrl),
         })
       }
     })
   })
 
-  // 🧩 Correção: serializar o objeto antes de enviá-lo ao componente cliente
-  const serializedCombat = JSON.parse(
-    JSON.stringify({
-      id: combat._id.toString(),
-      participants: combat.participants.map((p: any) => ({
-        id: p._id.toString(),
-        name: p.name,
-      })),
-      rounds: combat.rounds || [],
-    })
-  )
+  const serializedRounds = (combat.rounds || []).map((round: any) => {
+    // Convert votes Map to plain object, handling cases where it might not be a Map
+    let votesObj = {}
+    if (round.votes) {
+      if (round.votes instanceof Map) {
+        votesObj = Object.fromEntries(round.votes)
+      } else if (typeof round.votes === "object") {
+        votesObj = round.votes
+      }
+    }
+
+    return {
+      filmA: round.filmA
+        ? {
+            tmdbId: String(round.filmA.tmdbId || ""),
+            title: String(round.filmA.title || ""),
+            posterUrl: String(round.filmA.posterUrl || ""),
+          }
+        : null,
+      filmB: round.filmB
+        ? {
+            tmdbId: String(round.filmB.tmdbId || ""),
+            title: String(round.filmB.title || ""),
+            posterUrl: String(round.filmB.posterUrl || ""),
+          }
+        : null,
+      votes: votesObj,
+    }
+  })
 
   return (
     <VoteClient
-      combat={serializedCombat}
+      combat={{
+        id: combat._id.toString(),
+        participants: combat.participants.map((p: any) => ({
+          id: p._id.toString(),
+          name: p.name,
+        })),
+        rounds: serializedRounds,
+      }}
       userId={session.userId}
       allMovies={allMovies}
     />

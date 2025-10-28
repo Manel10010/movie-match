@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server"
 import { connectDB } from "@/lib/db"
 import { Combat } from "@/lib/models/Combat"
-import { User } from "@/lib/models/User"
 import { getSession } from "@/lib/auth"
+import { getSocketServer } from "@/lib/socket-server"
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -32,33 +32,17 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: "Need at least 2 participants" }, { status: 400 })
     }
 
-    // Gather all movies from participants
-    const users = await User.find({ _id: { $in: combat.participants } })
-    const allMovies: any[] = []
-
-    users.forEach((user) => {
-      user.deck.forEach((movie) => {
-        allMovies.push({
-          tmdbId: movie.tmdbId,
-          title: movie.title,
-          posterUrl: movie.posterUrl,
-        })
-      })
-    })
-
-    // Remove duplicates
-    const uniqueMovies = Array.from(new Map(allMovies.map((m) => [m.tmdbId, m])).values())
-
-    // Shuffle movies
-    const shuffled = uniqueMovies.sort(() => Math.random() - 0.5)
-
-    combat.status = "in_progress"
+    combat.status = "selecting"
+    combat.participantSelections = []
     combat.rounds = []
     await combat.save()
 
+    const io = getSocketServer()
+    io.to(id).emit("selection-started")
+
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error("[START_COMBAT_ERROR]", error)
+    console.error("[v0] Start combat error:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }

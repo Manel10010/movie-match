@@ -1,13 +1,13 @@
 "use client"
 
-import { useEffect } from "react"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { ArrowLeft, Users, Film, Play } from "lucide-react"
+import { useCombatSocket } from "@/hooks/use-combat-socket"
 
 interface Participant {
   id: string
@@ -38,11 +38,36 @@ export function CombatClient({ combat, user, isParticipant }: CombatClientProps)
   const [isJoining, setIsJoining] = useState(false)
   const [isStarting, setIsStarting] = useState(false)
   const [error, setError] = useState("")
+  const [participants, setParticipants] = useState(combat.participants)
+  const [status, setStatus] = useState(combat.status)
 
-  const canJoin =
-    !isParticipant && combat.participants.length < combat.maxParticipants && user.deckCount >= combat.deckSize
-  const canStart =
-    isParticipant && user.id === combat.creatorId && combat.participants.length >= 2 && combat.status === "waiting"
+  useCombatSocket({
+    combatId: combat.id,
+    onParticipantJoined: (newParticipants) => {
+      setParticipants(newParticipants)
+    },
+    onSelectionStarted: () => {
+      setStatus("selecting")
+      router.push(`/combat/${combat.id}/select`)
+    },
+    onCombatStarted: () => {
+      setStatus("in_progress")
+      router.push(`/combat/${combat.id}/vote`)
+    },
+  })
+
+  useEffect(() => {
+    if (status === "selecting") {
+      router.push(`/combat/${combat.id}/select`)
+    } else if (status === "in_progress") {
+      router.push(`/combat/${combat.id}/vote`)
+    } else if (status === "finished") {
+      router.push(`/combat/${combat.id}/result`)
+    }
+  }, [status, combat.id, router])
+
+  const canJoin = !isParticipant && participants.length < combat.maxParticipants && user.deckCount >= combat.deckSize
+  const canStart = isParticipant && user.id === combat.creatorId && participants.length >= 2 && status === "waiting"
 
   const handleJoin = async () => {
     setIsJoining(true)
@@ -59,8 +84,6 @@ export function CombatClient({ combat, user, isParticipant }: CombatClientProps)
         setError(data.error || "Failed to join combat")
         return
       }
-
-      router.refresh()
     } catch {
       setError("Something went wrong")
     } finally {
@@ -83,22 +106,12 @@ export function CombatClient({ combat, user, isParticipant }: CombatClientProps)
         setError(data.error || "Failed to start combat")
         return
       }
-
-      router.refresh()
     } catch {
       setError("Something went wrong")
     } finally {
       setIsStarting(false)
     }
   }
-
-  useEffect(() => {
-  if (combat.status === "in_progress") {
-    router.push(`/combat/${combat.id}/vote`)
-  } else if (combat.status === "finished") {
-    router.push(`/combat/${combat.id}/result`)
-  }
-}, [combat.status, combat.id, router])
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-900 via-slate-900 to-black">
@@ -125,7 +138,7 @@ export function CombatClient({ combat, user, isParticipant }: CombatClientProps)
                   <div>
                     <p className="text-sm text-gray-400">Participants</p>
                     <p className="text-2xl font-bold text-white">
-                      {combat.participants.length} / {combat.maxParticipants}
+                      {participants.length} / {combat.maxParticipants}
                     </p>
                   </div>
                 </div>
@@ -141,7 +154,7 @@ export function CombatClient({ combat, user, isParticipant }: CombatClientProps)
               <div>
                 <h3 className="text-lg font-semibold text-white mb-4">Participants</h3>
                 <div className="space-y-3">
-                  {combat.participants.map((participant) => (
+                  {participants.map((participant) => (
                     <div key={participant.id} className="flex items-center gap-4 p-4 rounded-lg bg-white/5">
                       <Avatar>
                         <AvatarImage src={participant.profilePic || "/placeholder.svg"} alt={participant.name} />

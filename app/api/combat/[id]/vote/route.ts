@@ -26,7 +26,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: "Not a participant" }, { status: 403 })
     }
 
-    // Find or create round for this pair
     let round = combat.rounds.find(
       (r: any) =>
         (r.filmA.tmdbId === filmA.tmdbId && r.filmB.tmdbId === filmB.tmdbId) ||
@@ -43,40 +42,22 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     }
 
     // Record vote
-    if (vote === "skip") {
-      round.votes.set(session.userId, "skip")
-    } else {
-      round.votes.set(session.userId, vote)
-    }
+    round.votes.set(session.userId, vote)
 
-    // Check if all participants have voted on this round
-    const allVoted = combat.participants.every((p: any) => round.votes.has(p._id.toString()))
+    const allVotedOnThisRound = combat.participants.every((p: any) => round.votes.has(p._id.toString()))
 
-    let eliminated = null
-    let winner = null
+    console.log("[v0] Vote recorded:", {
+      filmA: filmA.title,
+      filmB: filmB.title,
+      vote,
+      userId: session.userId,
+      allVoted: allVotedOnThisRound,
+      totalVotes: round.votes.size,
+      totalParticipants: combat.participants.length,
+    })
 
-    if (allVoted) {
-      // Count votes
-      let votesA = 0
-      let votesB = 0
-      let skips = 0
+    await combat.save()
 
-      round.votes.forEach((v: string) => {
-        if (v === "A") votesA++
-        else if (v === "B") votesB++
-        else skips++
-      })
-
-      // Determine elimination
-      if (votesA > votesB) {
-        eliminated = filmB.tmdbId
-      } else if (votesB > votesA) {
-        eliminated = filmA.tmdbId
-      }
-      // If tied or all skipped, no elimination
-    }
-
-    // Get all unique movies from participants
     const allMovies: any[] = []
     combat.participants.forEach((p: any) => {
       p.deck.forEach((movie: any) => {
@@ -90,11 +71,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       })
     })
 
-    // Remove eliminated movies
     const eliminatedIds = new Set<string>()
+    const completedRounds: any[] = []
+
     combat.rounds.forEach((r: any) => {
-      const allVoted = combat.participants.every((p: any) => r.votes.has(p._id.toString()))
-      if (allVoted) {
+      const isComplete = combat.participants.every((p: any) => r.votes.has(p._id.toString()))
+      if (isComplete) {
+        completedRounds.push(r)
         let votesA = 0
         let votesB = 0
 
@@ -105,24 +88,71 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
         if (votesA > votesB) {
           eliminatedIds.add(r.filmB.tmdbId)
+          console.log("[v0] Eliminating:", r.filmB.title, `(${votesB} votes vs ${votesA} votes)`)
         } else if (votesB > votesA) {
           eliminatedIds.add(r.filmA.tmdbId)
+          console.log("[v0] Eliminating:", r.filmA.title, `(${votesA} votes vs ${votesB} votes)`)
+        } else {
+          console.log("[v0] Tie between:", r.filmA.title, "and", r.filmB.title)
         }
       }
     })
 
     const remainingMovies = allMovies.filter((m: any) => !eliminatedIds.has(m.tmdbId))
 
-    // Check if we have a winner
+    console.log("[v0] Current state:", {
+      totalMovies: allMovies.length,
+      completedRounds: completedRounds.length,
+      totalRounds: combat.rounds.length,
+      eliminated: eliminatedIds.size,
+      remaining: remainingMovies.length,
+      eliminatedTitles: Array.from(eliminatedIds),
+    })
+
+    let winner = null
     if (remainingMovies.length === 1) {
       combat.winner = remainingMovies[0]
       combat.status = "finished"
       winner = remainingMovies[0]
+      await combat.save()
+
+      console.log("[v0] Combat finished! Winner:", winner.title)
+
+      try {
+        const io = (global as any).io
+        if (io) {
+          io.to(`combat-${id}`).emit("combat-finished", { winner })
+        }
+      } catch (socketError) {
+        console.error("[SOCKET_ERROR]", socketError)
+      }
+
+      return NextResponse.json({ success: true, winner, remainingMovies })
     }
 
-    await combat.save()
+    try {
+      const io = (global as any).io
+      if (io && allVotedOnThisRound) {
+        console.log("[v0] Emitting round-completed event")
+        io.to(`combat-${id}`).emit("round-completed", {
+          completedRound: {
+            filmA: round.filmA,
+            filmB: round.filmB,
+          },
+          remainingMovies,
+          completedRoundsCount: completedRounds.length,
+        })
+      }
+    } catch (socketError) {
+      console.error("[SOCKET_ERROR]", socketError)
+    }
 
-    return NextResponse.json({ success: true, eliminated, winner })
+    return NextResponse.json({
+      success: true,
+      remainingMovies,
+      completedRounds: completedRounds.length,
+      totalRounds: combat.rounds.length,
+    })
   } catch (error) {
     console.error("[VOTE_ERROR]", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
