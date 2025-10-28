@@ -3,6 +3,8 @@ const { parse } = require("url")
 const next = require("next")
 const { Server } = require("socket.io")
 
+const { initSocketServer } = require("./lib/socket-server.ts")
+
 const dev = process.env.NODE_ENV !== "production"
 const hostname = "localhost"
 const port = 3000
