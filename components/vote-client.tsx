@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -17,125 +17,64 @@ interface Movie {
 interface VoteClientProps {
   combat: {
     id: string
+    currentRoundIndex: number
     participants: { id: string; name: string }[]
     rounds: any[]
   }
   userId: string
-  allMovies: Movie[]
 }
 
-export function VoteClient({ combat, userId, allMovies }: VoteClientProps) {
+export function VoteClient({ combat, userId }: VoteClientProps) {
   const router = useRouter()
-  const [currentMovies, setCurrentMovies] = useState<Movie[]>(allMovies)
-  const [currentPair, setCurrentPair] = useState<[Movie, Movie] | null>(null)
-  const [completedRounds, setCompletedRounds] = useState<Set<string>>(new Set())
+  const [currentRoundIndex, setCurrentRoundIndex] = useState(combat.currentRoundIndex)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [waitingForOthers, setWaitingForOthers] = useState(false)
+  const [hasVotedCurrentRound, setHasVotedCurrentRound] = useState(false)
 
   useCombatSocket({
     combatId: combat.id,
-    onRoundCompleted: (data) => {
-      console.log("[v0] Round completed event received:", data)
-      const roundKey = [data.completedRound.filmA.tmdbId, data.completedRound.filmB.tmdbId].sort().join("-")
-
-      setCompletedRounds((prev) => {
-        const newSet = new Set([...prev, roundKey])
-        console.log("[v0] Updated completed rounds:", newSet.size)
-        return newSet
-      })
-
-      setCurrentMovies(data.remainingMovies)
-      console.log("[v0] Updated remaining movies:", data.remainingMovies.length)
-
-      // Reset state to allow next pair selection
-      setCurrentPair(null)
+    onRoundFinished: (data) => {
+      console.log("[v0] Round finished event received:", data)
+      setCurrentRoundIndex(data.nextRoundIndex)
       setWaitingForOthers(false)
+      setHasVotedCurrentRound(false)
     },
-    onCombatFinished: () => {
+    onCombatFinished: (data) => {
       console.log("[v0] Combat finished, redirecting to results")
       router.push(`/combat/${combat.id}/result`)
     },
   })
 
-  useEffect(() => {
-    const completed = new Set<string>()
-    combat.rounds.forEach((round: any) => {
-      const allVoted = combat.participants.every((p) => p.id in round.votes)
-      if (allVoted) {
-        const roundKey = [round.filmA.tmdbId, round.filmB.tmdbId].sort().join("-")
-        completed.add(roundKey)
-      }
-    })
-    setCompletedRounds(completed)
-    console.log("[v0] Initialized with", completed.size, "completed rounds")
-  }, [combat.rounds, combat.participants])
+  const currentRound = combat.rounds[currentRoundIndex]
 
-  useEffect(() => {
-    console.log("[v0] Pair selection check:", {
-      moviesCount: currentMovies.length,
-      hasPair: !!currentPair,
-      waiting: waitingForOthers,
-      completedCount: completedRounds.size,
-    })
-
-    if (currentMovies.length >= 2 && !currentPair && !waitingForOthers) {
-      console.log("[v0] Selecting next pair...")
-      selectNextPair()
-    } else if (currentMovies.length === 1) {
-      console.log("[v0] Only one movie left, redirecting to results")
-      router.push(`/combat/${combat.id}/result`)
-    }
-  }, [currentMovies, currentPair, waitingForOthers, completedRounds])
-
-  const selectNextPair = () => {
-    const availablePairs: [Movie, Movie][] = []
-
-    for (let i = 0; i < currentMovies.length; i++) {
-      for (let j = i + 1; j < currentMovies.length; j++) {
-        const pairKey = [currentMovies[i].tmdbId, currentMovies[j].tmdbId].sort().join("-")
-        if (!completedRounds.has(pairKey)) {
-          availablePairs.push([currentMovies[i], currentMovies[j]])
-        }
-      }
-    }
-
-    console.log("[v0] Available pairs:", {
-      total: availablePairs.length,
-      completed: completedRounds.size,
-      movies: currentMovies.length,
-    })
-
-    if (availablePairs.length > 0) {
-      const randomIndex = Math.floor(Math.random() * availablePairs.length)
-      const selectedPair = availablePairs[randomIndex]
-      console.log("[v0] Selected pair:", selectedPair[0].title, "vs", selectedPair[1].title)
-      setCurrentPair(selectedPair)
-      setWaitingForOthers(false)
-    } else if (currentMovies.length > 1) {
-      // All pairs voted but still multiple movies - need to wait for elimination
-      console.log("[v0] All pairs voted, waiting for elimination...")
-      setWaitingForOthers(true)
-    }
+  if (!currentRound) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-purple-900 via-slate-900 to-black flex items-center justify-center">
+        <p className="text-white text-xl">Loading...</p>
+      </div>
+    )
   }
 
   const handleVote = async (choice: "A" | "B" | "skip") => {
-    if (!currentPair) return
+    if (hasVotedCurrentRound) return
 
     setIsSubmitting(true)
+    setHasVotedCurrentRound(true)
 
     try {
       console.log("[v0] Submitting vote:", {
-        filmA: currentPair[0].title,
-        filmB: currentPair[1].title,
+        filmA: currentRound.filmA.title,
+        filmB: currentRound.filmB.title,
         choice,
+        roundIndex: currentRoundIndex,
       })
 
       const res = await fetch(`/api/combat/${combat.id}/vote`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          filmA: currentPair[0],
-          filmB: currentPair[1],
+          filmA: currentRound.filmA,
+          filmB: currentRound.filmB,
           vote: choice,
         }),
       })
@@ -144,39 +83,30 @@ export function VoteClient({ combat, userId, allMovies }: VoteClientProps) {
 
       if (!res.ok) {
         console.error("[v0] Vote failed:", data.error)
+        setHasVotedCurrentRound(false)
         return
       }
 
       console.log("[v0] Vote response:", data)
 
-      if (data.winner) {
-        console.log("[v0] Winner determined:", data.winner.title)
+      if (data.combatFinished) {
+        console.log("[v0] Combat finished:", data.winner?.title)
         router.push(`/combat/${combat.id}/result`)
         return
       }
 
-      if (data.remainingMovies) {
-        setCurrentMovies(data.remainingMovies)
+      if (data.roundFinished) {
+        setWaitingForOthers(true)
       }
-
-      // Mark this pair as completed locally
-      const pairKey = [currentPair[0].tmdbId, currentPair[1].tmdbId].sort().join("-")
-      setCompletedRounds((prev) => new Set([...prev, pairKey]))
-
-      // Clear current pair and wait for others
-      setCurrentPair(null)
-      setWaitingForOthers(true)
     } catch (error) {
       console.error("[v0] Vote error:", error)
+      setHasVotedCurrentRound(false)
     } finally {
       setIsSubmitting(false)
     }
   }
 
-  if (currentMovies.length === 1) {
-    router.push(`/combat/${combat.id}/result`)
-    return null
-  }
+  const progress = ((currentRoundIndex + 1) / combat.rounds.length) * 100
 
   if (waitingForOthers) {
     return (
@@ -185,22 +115,14 @@ export function VoteClient({ combat, userId, allMovies }: VoteClientProps) {
           <div className="text-center space-y-4">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto"></div>
             <p className="text-white text-xl">Waiting for other participants to vote...</p>
-            <p className="text-gray-400 text-sm">{currentMovies.length} movies remaining</p>
+            <p className="text-gray-400 text-sm">
+              Round {currentRoundIndex + 1} of {combat.rounds.length}
+            </p>
           </div>
         </Card>
       </div>
     )
   }
-
-  if (!currentPair) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-purple-900 via-slate-900 to-black flex items-center justify-center">
-        <p className="text-white text-xl">Loading next matchup...</p>
-      </div>
-    )
-  }
-
-  const progress = ((allMovies.length - currentMovies.length) / allMovies.length) * 100
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-900 via-slate-900 to-black">
@@ -218,7 +140,7 @@ export function VoteClient({ combat, userId, allMovies }: VoteClientProps) {
           <div className="text-center space-y-2">
             <h1 className="text-3xl font-bold text-white">Choose Your Preference</h1>
             <p className="text-gray-300">
-              {currentMovies.length} movies remaining • {combat.participants.length} participants
+              Round {currentRoundIndex + 1} of {combat.rounds.length} • {combat.participants.length} participants
             </p>
             <Progress value={progress} className="h-2" />
           </div>
@@ -226,23 +148,23 @@ export function VoteClient({ combat, userId, allMovies }: VoteClientProps) {
           <div className="grid md:grid-cols-2 gap-6">
             <Card
               className="bg-white/5 border-white/10 overflow-hidden cursor-pointer hover:scale-105 transition-transform"
-              onClick={() => !isSubmitting && handleVote("A")}
+              onClick={() => !isSubmitting && !hasVotedCurrentRound && handleVote("A")}
             >
               <div className="aspect-[2/3] relative">
                 <img
-                  src={currentPair[0].posterUrl || "/placeholder.svg?height=600&width=400"}
-                  alt={currentPair[0].title}
+                  src={currentRound.filmA.posterUrl || "/placeholder.svg?height=600&width=400"}
+                  alt={currentRound.filmA.title}
                   className="w-full h-full object-cover"
                 />
               </div>
               <CardContent className="p-6 space-y-4">
-                <h2 className="text-2xl font-bold text-white text-center">{currentPair[0].title}</h2>
+                <h2 className="text-2xl font-bold text-white text-center">{currentRound.filmA.title}</h2>
                 <Button
                   onClick={(e) => {
                     e.stopPropagation()
                     handleVote("A")
                   }}
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || hasVotedCurrentRound}
                   className="w-full bg-green-600 hover:bg-green-700"
                   size="lg"
                 >
@@ -254,23 +176,23 @@ export function VoteClient({ combat, userId, allMovies }: VoteClientProps) {
 
             <Card
               className="bg-white/5 border-white/10 overflow-hidden cursor-pointer hover:scale-105 transition-transform"
-              onClick={() => !isSubmitting && handleVote("B")}
+              onClick={() => !isSubmitting && !hasVotedCurrentRound && handleVote("B")}
             >
               <div className="aspect-[2/3] relative">
                 <img
-                  src={currentPair[1].posterUrl || "/placeholder.svg?height=600&width=400"}
-                  alt={currentPair[1].title}
+                  src={currentRound.filmB.posterUrl || "/placeholder.svg?height=600&width=400"}
+                  alt={currentRound.filmB.title}
                   className="w-full h-full object-cover"
                 />
               </div>
               <CardContent className="p-6 space-y-4">
-                <h2 className="text-2xl font-bold text-white text-center">{currentPair[1].title}</h2>
+                <h2 className="text-2xl font-bold text-white text-center">{currentRound.filmB.title}</h2>
                 <Button
                   onClick={(e) => {
                     e.stopPropagation()
                     handleVote("B")
                   }}
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || hasVotedCurrentRound}
                   className="w-full bg-green-600 hover:bg-green-700"
                   size="lg"
                 >
@@ -284,7 +206,7 @@ export function VoteClient({ combat, userId, allMovies }: VoteClientProps) {
           <div className="text-center">
             <Button
               onClick={() => handleVote("skip")}
-              disabled={isSubmitting}
+              disabled={isSubmitting || hasVotedCurrentRound}
               variant="outline"
               className="bg-transparent text-white border-white/20 hover:bg-white/10"
             >

@@ -26,132 +26,135 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: "Not a participant" }, { status: 403 })
     }
 
-    let round = combat.rounds.find(
-      (r: any) =>
-        (r.filmA.tmdbId === filmA.tmdbId && r.filmB.tmdbId === filmB.tmdbId) ||
-        (r.filmA.tmdbId === filmB.tmdbId && r.filmB.tmdbId === filmA.tmdbId),
-    )
-
-    if (!round) {
-      round = {
-        filmA,
-        filmB,
-        votes: new Map(),
-      }
-      combat.rounds.push(round)
+    const currentRound = combat.rounds[combat.currentRoundIndex]
+    if (!currentRound) {
+      return NextResponse.json({ error: "Current round not found" }, { status: 404 })
     }
 
-    // Record vote
-    round.votes.set(session.userId, vote)
+    currentRound.votes.set(session.userId, vote)
 
-    const allVotedOnThisRound = combat.participants.every((p: any) => round.votes.has(p._id.toString()))
+    const allVotedOnThisRound = combat.participants.every((p: any) => currentRound.votes.has(p._id.toString()))
 
     console.log("[v0] Vote recorded:", {
-      filmA: filmA.title,
-      filmB: filmB.title,
+      filmA: currentRound.filmA.title,
+      filmB: currentRound.filmB.title,
       vote,
       userId: session.userId,
       allVoted: allVotedOnThisRound,
-      totalVotes: round.votes.size,
+      totalVotes: currentRound.votes.size,
       totalParticipants: combat.participants.length,
+      currentRoundIndex: combat.currentRoundIndex,
     })
 
     await combat.save()
 
-    const allMovies: any[] = []
-    combat.participants.forEach((p: any) => {
-      p.deck.forEach((movie: any) => {
-        if (!allMovies.find((m: any) => m.tmdbId === movie.tmdbId)) {
-          allMovies.push({
-            tmdbId: movie.tmdbId,
-            title: movie.title,
-            posterUrl: movie.posterUrl,
-          })
-        }
+    if (allVotedOnThisRound) {
+      let votesA = 0
+      let votesB = 0
+
+      currentRound.votes.forEach((v: string) => {
+        if (v === "A") votesA++
+        else if (v === "B") votesB++
       })
-    })
 
-    const eliminatedIds = new Set<string>()
-    const completedRounds: any[] = []
+      const winner = votesA > votesB ? "A" : votesB > votesA ? "B" : null
 
-    combat.rounds.forEach((r: any) => {
-      const isComplete = combat.participants.every((p: any) => r.votes.has(p._id.toString()))
-      if (isComplete) {
-        completedRounds.push(r)
-        let votesA = 0
-        let votesB = 0
+      console.log("[v0] Round completed:", {
+        filmA: currentRound.filmA.title,
+        filmB: currentRound.filmB.title,
+        votesA,
+        votesB,
+        winner,
+      })
 
-        r.votes.forEach((v: string) => {
-          if (v === "A") votesA++
-          else if (v === "B") votesB++
+      currentRound.finished = true
+
+      if (combat.currentRoundIndex < combat.rounds.length - 1) {
+        combat.currentRoundIndex += 1
+        await combat.save()
+
+        try {
+          const io = (global as any).io
+          if (io) {
+            io.to(`combat-${id}`).emit("round-finished", {
+              winner,
+              nextRoundIndex: combat.currentRoundIndex,
+              totalRounds: combat.rounds.length,
+            })
+          }
+        } catch (socketError) {
+          console.error("[SOCKET_ERROR]", socketError)
+        }
+
+        return NextResponse.json({
+          success: true,
+          roundFinished: true,
+          winner,
+          nextRound: true,
+        })
+      } else {
+        combat.status = "finished"
+
+        // Count total wins for each film across all rounds
+        const filmWins = new Map<string, number>()
+
+        combat.rounds.forEach((r: any) => {
+          if (r.finished) {
+            let votesA = 0
+            let votesB = 0
+
+            r.votes.forEach((v: string) => {
+              if (v === "A") votesA++
+              else if (v === "B") votesB++
+            })
+
+            const winner = votesA > votesB ? r.filmA : votesB > votesA ? r.filmB : null
+            if (winner) {
+              filmWins.set(winner.tmdbId, (filmWins.get(winner.tmdbId) || 0) + 1)
+            }
+          }
         })
 
-        if (votesA > votesB) {
-          eliminatedIds.add(r.filmB.tmdbId)
-          console.log("[v0] Eliminating:", r.filmB.title, `(${votesB} votes vs ${votesA} votes)`)
-        } else if (votesB > votesA) {
-          eliminatedIds.add(r.filmA.tmdbId)
-          console.log("[v0] Eliminating:", r.filmA.title, `(${votesA} votes vs ${votesB} votes)`)
-        } else {
-          console.log("[v0] Tie between:", r.filmA.title, "and", r.filmB.title)
+        // Find the film with most wins
+        let finalWinner = null
+        let maxWins = 0
+
+        filmWins.forEach((wins, tmdbId) => {
+          if (wins > maxWins) {
+            maxWins = wins
+            const winnerFilm = combat.rounds
+              .flatMap((r: any) => [r.filmA, r.filmB])
+              .find((f: any) => f.tmdbId === tmdbId)
+            finalWinner = winnerFilm
+          }
+        })
+
+        combat.winner = finalWinner
+        await combat.save()
+
+        console.log("[v0] Combat finished! Winner:", finalWinner?.title)
+
+        try {
+          const io = (global as any).io
+          if (io) {
+            io.to(`combat-${id}`).emit("combat-finished", { winner: finalWinner })
+          }
+        } catch (socketError) {
+          console.error("[SOCKET_ERROR]", socketError)
         }
-      }
-    })
 
-    const remainingMovies = allMovies.filter((m: any) => !eliminatedIds.has(m.tmdbId))
-
-    console.log("[v0] Current state:", {
-      totalMovies: allMovies.length,
-      completedRounds: completedRounds.length,
-      totalRounds: combat.rounds.length,
-      eliminated: eliminatedIds.size,
-      remaining: remainingMovies.length,
-      eliminatedTitles: Array.from(eliminatedIds),
-    })
-
-    let winner = null
-    if (remainingMovies.length === 1) {
-      combat.winner = remainingMovies[0]
-      combat.status = "finished"
-      winner = remainingMovies[0]
-      await combat.save()
-
-      console.log("[v0] Combat finished! Winner:", winner.title)
-
-      try {
-        const io = (global as any).io
-        if (io) {
-          io.to(`combat-${id}`).emit("combat-finished", { winner })
-        }
-      } catch (socketError) {
-        console.error("[SOCKET_ERROR]", socketError)
-      }
-
-      return NextResponse.json({ success: true, winner, remainingMovies })
-    }
-
-    try {
-      const io = (global as any).io
-      if (io && allVotedOnThisRound) {
-        console.log("[v0] Emitting round-completed event")
-        io.to(`combat-${id}`).emit("round-completed", {
-          completedRound: {
-            filmA: round.filmA,
-            filmB: round.filmB,
-          },
-          remainingMovies,
-          completedRoundsCount: completedRounds.length,
+        return NextResponse.json({
+          success: true,
+          roundFinished: true,
+          combatFinished: true,
+          winner: finalWinner,
         })
       }
-    } catch (socketError) {
-      console.error("[SOCKET_ERROR]", socketError)
     }
 
     return NextResponse.json({
       success: true,
-      remainingMovies,
-      completedRounds: completedRounds.length,
-      totalRounds: combat.rounds.length,
+      roundFinished: false,
     })
   } catch (error) {
     console.error("[VOTE_ERROR]", error)

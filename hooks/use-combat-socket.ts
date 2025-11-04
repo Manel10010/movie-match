@@ -21,7 +21,7 @@ interface UseCombatSocketOptions {
   combatId: string
   onParticipantJoined?: (participants: Participant[]) => void
   onCombatStarted?: () => void
-  onRoundCompleted?: (data: { completedRound: any; remainingMovies: Movie[] }) => void
+  onRoundFinished?: (data: { winner: string; nextRoundIndex: number; totalRounds: number }) => void
   onCombatFinished?: (data: { winner: Movie }) => void
 }
 
@@ -29,7 +29,7 @@ export function useCombatSocket({
   combatId,
   onParticipantJoined,
   onCombatStarted,
-  onRoundCompleted,
+  onRoundFinished,
   onCombatFinished,
 }: UseCombatSocketOptions) {
   const [socket, setSocket] = useState<Socket | null>(null)
@@ -61,9 +61,9 @@ export function useCombatSocket({
       onCombatStarted?.()
     }
 
-    const handleRoundCompleted = (data: { completedRound: any; remainingMovies: Movie[] }) => {
-      console.log("[v0] Round completed:", data)
-      onRoundCompleted?.(data)
+    const handleRoundFinished = (data: { winner: string; nextRoundIndex: number; totalRounds: number }) => {
+      console.log("[v0] Round finished:", data)
+      onRoundFinished?.(data)
     }
 
     const handleCombatFinished = (data: { winner: Movie }) => {
@@ -75,7 +75,7 @@ export function useCombatSocket({
     socketInstance.on("disconnect", handleDisconnect)
     socketInstance.on("participant-joined", handleParticipantJoined)
     socketInstance.on("combat-started", handleCombatStarted)
-    socketInstance.on("round-completed", handleRoundCompleted)
+    socketInstance.on("round-finished", handleRoundFinished)
     socketInstance.on("combat-finished", handleCombatFinished)
 
     return () => {
@@ -84,10 +84,10 @@ export function useCombatSocket({
       socketInstance.off("disconnect", handleDisconnect)
       socketInstance.off("participant-joined", handleParticipantJoined)
       socketInstance.off("combat-started", handleCombatStarted)
-      socketInstance.off("round-completed", handleRoundCompleted)
+      socketInstance.off("round-finished", handleRoundFinished)
       socketInstance.off("combat-finished", handleCombatFinished)
     }
-  }, [combatId, onParticipantJoined, onCombatStarted, onRoundCompleted, onCombatFinished])
+  }, [combatId, onParticipantJoined, onCombatStarted, onRoundFinished, onCombatFinished])
 
   return { socket, isConnected }
 }

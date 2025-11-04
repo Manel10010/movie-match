@@ -58,9 +58,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 
     return NextResponse.json({
       status: combat.status,
-      totalMovies: allMovies.length,
-      remainingMovies: remainingMovies.length,
-      winner: combat.winner,
+      currentRoundIndex: combat.currentRoundIndex || 0,
+      totalRounds: combat.rounds?.length || 0,
+      winner: combat.winner || null,
+      participantCount: combat.participants?.length || 0,
     })
   } catch (error) {
     console.error("[STATUS_ERROR]", error)

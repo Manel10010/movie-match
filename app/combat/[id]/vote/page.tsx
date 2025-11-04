@@ -82,6 +82,7 @@ export default async function VotePage({ params }: { params: Promise<{ id: strin
     <VoteClient
       combat={{
         id: combat._id.toString(),
+        currentRoundIndex: combat.currentRoundIndex || 0,
         participants: combat.participants.map((p: any) => ({
           id: p._id.toString(),
           name: p.name,

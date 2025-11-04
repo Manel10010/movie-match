@@ -10,6 +10,7 @@ export interface IRound {
   filmA: IFilm
   filmB: IFilm
   votes: Map<string, "A" | "B">
+  finished?: boolean
 }
 
 export interface ICombat extends Document {
@@ -17,7 +18,8 @@ export interface ICombat extends Document {
   participants: mongoose.Types.ObjectId[]
   deckSize: number
   maxParticipants: number
-  status: "waiting" | "in_progress" | "finished"
+  status: "waiting" | "selecting" | "in_progress" | "finished"
+  currentRoundIndex: number
   rounds: IRound[]
   winner?: IFilm
   createdAt: Date
@@ -33,6 +35,7 @@ const RoundSchema = new Schema({
   filmA: FilmSchema,
   filmB: FilmSchema,
   votes: { type: Map, of: String },
+  finished: { type: Boolean, default: false },
 })
 
 const CombatSchema = new Schema<ICombat>({
@@ -42,9 +45,10 @@ const CombatSchema = new Schema<ICombat>({
   maxParticipants: { type: Number, required: true },
   status: {
     type: String,
-    enum: ["waiting", "in_progress", "finished"],
+    enum: ["waiting", "selecting", "in_progress", "finished"],
     default: "waiting",
   },
+  currentRoundIndex: { type: Number, default: 0 },
   rounds: [RoundSchema],
   winner: FilmSchema,
   createdAt: { type: Date, default: Date.now },

@@ -3,6 +3,7 @@ import { connectDB } from "@/lib/db"
 import { Combat } from "@/lib/models/Combat"
 import { User } from "@/lib/models/User"
 import { getSession } from "@/lib/auth"
+import { generateRounds } from "@/lib/generate-rounds"
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -37,25 +38,32 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
     users.forEach((user) => {
       user.deck.forEach((movie) => {
-        allMovies.push({
-          tmdbId: movie.tmdbId,
-          title: movie.title,
-          posterUrl: movie.posterUrl,
-        })
+        if (!allMovies.find((m) => m.tmdbId === movie.tmdbId)) {
+          allMovies.push({
+            tmdbId: movie.tmdbId,
+            title: movie.title,
+            posterUrl: movie.posterUrl,
+          })
+        }
       })
     })
 
-    const uniqueMovies = Array.from(new Map(allMovies.map((m) => [m.tmdbId, m])).values())
-    const shuffled = uniqueMovies.sort(() => Math.random() - 0.5)
+    const rounds = generateRounds(allMovies)
 
     combat.status = "in_progress"
-    combat.rounds = []
+    combat.rounds = rounds
+    combat.currentRoundIndex = 0
     await combat.save()
+
+    console.log("[v0] Combat started with", rounds.length, "rounds")
 
     try {
       const io = (global as any).io
       if (io) {
-        io.to(`combat-${id}`).emit("combat-started")
+        io.to(`combat-${id}`).emit("combat-started", {
+          totalRounds: rounds.length,
+          currentRoundIndex: 0,
+        })
       }
     } catch (socketError) {
       console.error("[SOCKET_ERROR]", socketError)
